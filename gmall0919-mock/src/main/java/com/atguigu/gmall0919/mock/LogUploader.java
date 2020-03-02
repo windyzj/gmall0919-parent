@@ -19,7 +19,7 @@ public class LogUploader {
             //不同的日志类型对应不同的URL
 
             URL url  =new URL("http://logserver/log"); //logserver 在hosts中配置
-
+    //unknowhost:logserver
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             //设置请求方式为post
             conn.setRequestMethod("POST");

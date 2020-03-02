@@ -11,6 +11,7 @@
         <module>gmall0919-common</module>
         <module>gmall0919-mock</module>
         <module>gmall0919-logger</module>
+        <module>gmall0919-realtime</module>
     </modules>
     <packaging>pom</packaging>
     <parent>

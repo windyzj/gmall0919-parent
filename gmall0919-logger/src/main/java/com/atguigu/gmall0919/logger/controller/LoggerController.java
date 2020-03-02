@@ -17,10 +17,11 @@ public class LoggerController {
     KafkaTemplate kafkaTemplate;
 
     //@RequestMapping(value = "log" ,method = RequestMethod.POST)
-    @PostMapping("log")
+    @PostMapping("/log")
     public String dolog(@RequestParam("logString") String logString ){
         System.out.println(logString);
 
+        //1 加时间戳
         JSONObject jsonObject = JSON.parseObject(logString);
         jsonObject.put("ts",System.currentTimeMillis());
         String jsonString = jsonObject.toJSONString();
