@@ -22,6 +22,7 @@ object DauApp {
       val sparkConf = new SparkConf().setMaster("local[*]").setAppName("dau_app")
       val ssc = new StreamingContext(sparkConf,Seconds(5))
 
+       //启动日志 --》日活
       val inputDstream: InputDStream[ConsumerRecord[String, String]] = MyKafkaUtil.getKafkaStream(GmallConstant.KAFKA_TOPIC_STARTUP,ssc)
 
     // inputDstream.map(  _.value()).print(100)
@@ -41,13 +42,13 @@ object DauApp {
     //  1  去重操作
 
       // 利用这个mid清单进行过滤  凡是已经出现过的mid 一律筛除掉
-    val jedis: Jedis = new Jedis("hadoop1", 6379)  //driver 只执行一次
+   /* val jedis: Jedis = new Jedis("hadoop1", 6379)  //driver 只执行一次
     val simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd")
     val todayString: String = simpleDateFormat.format(new Date())
     val dauKey="dau:"+todayString
     val dauSet: util.Set[String] = jedis.smembers(dauKey)
     jedis.close()
-    val dauBC: Broadcast[util.Set[String]] = ssc.sparkContext.broadcast(dauSet)
+    val dauBC: Broadcast[util.Set[String]] = ssc.sparkContext.broadcast(dauSet)*/
 
      val filteredDstream: DStream[StartUpLog] = startUpLogDstream.transform { rdd =>
       ///...driver 按周期执行  查询redis中的当日用户访问清单
@@ -64,18 +65,27 @@ object DauApp {
         ///校验 ex中批次内的数据是否有跟广播变量中的清单重复
         val dauSet: util.Set[String] = dauBC.value
         //ex
-        var flag=true
         if (dauSet != null && dauSet.size() > 0 && dauSet.contains(startuplog.mid)) {
-          flag= false
+           false
         } else {
-          flag= true
+            true
         }
-        flag
+
       }
       println("过滤后：" + filteredRDD.count())
       filteredRDD
-
     }
+
+    // 本批次去重 ，根据mid进行分组  组内根据时间戳排序 取 top1
+    val groupbyMidDstream: DStream[(String, Iterable[StartUpLog])] = filteredDstream.map(startuplog=>(startuplog.mid,startuplog)).groupByKey()
+    val finalFilteredDstream: DStream[StartUpLog] = groupbyMidDstream.flatMap { case (mid, startuplogItr) =>
+      if (startuplogItr.size == 1) {
+        startuplogItr.take(1)
+      } else {
+        startuplogItr.toList.sortWith((startuplog1, startuplog2) => startuplog1.ts < startuplog2.ts).take(1)
+      }
+    }
+
 
 
 
@@ -96,13 +106,13 @@ object DauApp {
 
     filteredDstream.cache()
     //  要把今天访问过的用户mid记录下来  保存到redis
-    filteredDstream.foreachRDD{ rdd=>
+    finalFilteredDstream.foreachRDD{ rdd=>
     // driver
       rdd.foreachPartition { startuplogItr =>
         val jedis: Jedis = new Jedis("hadoop1", 6379)
         for ( startuplog<- startuplogItr ) { //今天访问过的mid清单
            // redis     type?    set      key ?    "dau:2020-03-02"   value  mid
-          println(startuplog)
+            println(startuplog)
 
            val dauKey="dau:"+startuplog.logDate
            jedis.sadd(dauKey,startuplog.mid)
