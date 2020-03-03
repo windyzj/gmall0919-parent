@@ -8,6 +8,7 @@ import com.alibaba.fastjson.JSON
 import com.atguigu.gmall0919.common.constant.GmallConstant
 import com.atguigu.gmall0919.realtime.bean.StartUpLog
 import com.atguigu.gmall0919.realtime.util.MyKafkaUtil
+import org.apache.hadoop.conf.Configuration
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
@@ -15,6 +16,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import redis.clients.jedis.Jedis
+import org.apache.phoenix.spark._
 
 object DauApp {
 
@@ -122,11 +124,14 @@ object DauApp {
 
       }
 
+    }
+    //最后的筛选结果 保存起来 到分析数据库
 
-      //最后的筛选结果 保存起来 到分析数据库
+    finalFilteredDstream.foreachRDD{rdd=>
+      rdd.saveToPhoenix("GMALL0919_DAU",Seq("MID", "UID", "APPID", "AREA", "OS", "CH", "TYPE", "VS", "LOGDATE", "LOGHOUR", "TS"),
+        new Configuration(),Some("hadoop1,hadoop2,hadoop3:2181"))
 
     }
-
 
 
 

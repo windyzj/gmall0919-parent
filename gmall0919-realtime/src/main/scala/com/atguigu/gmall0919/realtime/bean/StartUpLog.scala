@@ -10,7 +10,7 @@ case class StartUpLog(mid:String,
                       vs:String,
                       var logDate:String,
                       var logHour:String,
-                        ts:Long
+                       ts:Long
                      ) {
 
 }
