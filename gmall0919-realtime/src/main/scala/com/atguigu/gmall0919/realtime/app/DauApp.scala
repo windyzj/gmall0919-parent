@@ -1,6 +1,6 @@
 package com.atguigu.gmall0919.realtime.app
 
-import java.{lang, util}
+import java.util
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -106,7 +106,7 @@ object DauApp {
 //    }
 
 
-    filteredDstream.cache()
+    finalFilteredDstream.cache()
     //  要把今天访问过的用户mid记录下来  保存到redis
     finalFilteredDstream.foreachRDD{ rdd=>
     // driver
