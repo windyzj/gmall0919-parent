@@ -63,8 +63,6 @@ public class PublisherController {
             Date ydDate = DateUtils.addDays(tdDate, -1);
             String yd = simpleDateFormat.format(ydDate);
             return yd;
-
-
         } catch (ParseException e) {
                 throw  new RuntimeException("日期格式不正确");
 

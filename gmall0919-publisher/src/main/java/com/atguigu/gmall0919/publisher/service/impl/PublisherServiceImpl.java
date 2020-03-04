@@ -16,8 +16,6 @@ public class PublisherServiceImpl  implements PublisherService {
     DauMapper dauMapper;
 
 
-
-
     @Override
     public Long getDauTotal(String date) {
         return dauMapper.selectDauTotal(date);

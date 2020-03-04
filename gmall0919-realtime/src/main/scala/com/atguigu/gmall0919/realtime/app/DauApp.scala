@@ -7,7 +7,7 @@ import java.util.Date
 import com.alibaba.fastjson.JSON
 import com.atguigu.gmall0919.common.constant.GmallConstant
 import com.atguigu.gmall0919.realtime.bean.StartUpLog
-import com.atguigu.gmall0919.realtime.util.MyKafkaUtil
+import com.atguigu.gmall0919.realtime.util.{MyKafkaUtil, RedisUtil}
 import org.apache.hadoop.conf.Configuration
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.SparkConf
@@ -51,10 +51,24 @@ object DauApp {
     val dauSet: util.Set[String] = jedis.smembers(dauKey)
     jedis.close()
     val dauBC: Broadcast[util.Set[String]] = ssc.sparkContext.broadcast(dauSet)*/
+    startUpLogDstream.map{startuplog=>
 
-     val filteredDstream: DStream[StartUpLog] = startUpLogDstream.transform { rdd =>
+    null
+    }
+
+    startUpLogDstream.mapPartitions{startuplogItr=>
+      null
+    }
+//    为什么用transform
+//    当你需要用转换算子
+//    如果用map filter  算子里面的所有操作 每条数据执行一次  而且在executor中执行
+//    如果用  mapPartition   每个分区执行一次  在executor中执行    如果你有以分区为单位操作的业务 且在executor执行的业务
+//      如果 transform  那么rdd外面的代码 在driver中执行(每个周期执行一次)  而 rdd.xxx() 里面代码 在executor中执行
+
+    val filteredDstream: DStream[StartUpLog] = startUpLogDstream.transform { rdd =>
       ///...driver 按周期执行  查询redis中的当日用户访问清单
-      val jedis: Jedis = new Jedis("hadoop1", 6379) //driver 只执行一次
+       //transform   rdd外面的用于 driver读取redis 并发送广播变量
+      val jedis: Jedis = new Jedis("hadoop1", 6379) //driver 每个周期执行一次
       val simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd")
       val todayString: String = simpleDateFormat.format(new Date())
       val dauKey = "dau:" + todayString
@@ -63,7 +77,7 @@ object DauApp {
       val dauBC: Broadcast[util.Set[String]] = ssc.sparkContext.broadcast(dauSet)
       ///
       println("过滤前：" + rdd.count())
-      val filteredRDD: RDD[StartUpLog] = rdd.filter { startuplog =>
+      val filteredRDD: RDD[StartUpLog] = rdd.filter { startuplog => // rdd里面的 executor 接收广播变量 进行去重
         ///校验 ex中批次内的数据是否有跟广播变量中的清单重复
         val dauSet: util.Set[String] = dauBC.value
         //ex
@@ -111,7 +125,7 @@ object DauApp {
     finalFilteredDstream.foreachRDD{ rdd=>
     // driver
       rdd.foreachPartition { startuplogItr =>
-        val jedis: Jedis = new Jedis("hadoop1", 6379)
+        val jedis: Jedis = RedisUtil.getJedisClient
         for ( startuplog<- startuplogItr ) { //今天访问过的mid清单
            // redis     type?    set      key ?    "dau:2020-03-02"   value  mid
             println(startuplog)
