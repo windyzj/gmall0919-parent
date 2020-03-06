@@ -43,9 +43,9 @@ public class CanalClient {
                             new RuntimeException("反序列化失败");
                         }
                         if(rowChange!=null){
-                            List<CanalEntry.RowData> rowDatasList = rowChange.getRowDatasList();
-                            String tableName=entry.getHeader().getTableName();
-                            CanalEntry.EventType eventType = rowChange.getEventType();
+                            List<CanalEntry.RowData> rowDatasList = rowChange.getRowDatasList();//行集
+                            String tableName=entry.getHeader().getTableName();  //表名
+                            CanalEntry.EventType eventType = rowChange.getEventType();//insert? update? delete?
 
                             CanalHandler canalHandler = new CanalHandler(eventType, tableName, rowDatasList);
                             canalHandler.handle();
