@@ -1,9 +1,11 @@
 package com.atguigu.gmall0919.realtime.app
 
+import java.util
+
 import com.alibaba.fastjson.JSON
 import com.atguigu.gmall0919.common.constant.GmallConstant
-import com.atguigu.gmall0919.realtime.bean.OrderInfo
-import com.atguigu.gmall0919.realtime.util.MyKafkaUtil
+import com.atguigu.gmall0919.realtime.bean.{OrderInfo, UserState}
+import com.atguigu.gmall0919.realtime.util.{MyKafkaUtil, PhoenixUtil}
 import org.apache.hadoop.conf.Configuration
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.SparkConf
@@ -42,14 +44,72 @@ object OrderApp {
 
       orderInfo
     }
-    orderInfoDstream
+    //不理想 ，会反复访问数据库
+    orderInfoDstream.map{orderInfo=>
+      val user_id: String = orderInfo.user_id
+      PhoenixUtil.queryList("select user_id,if_ordered from user_state0919 where user_id='"+user_id+"'")
+    }
 
+    //优化后 以分区为单位批量访问数据   根据返回的结果进行 首单标识
+    val orderWithIfFirstDstream: DStream[OrderInfo] = orderInfoDstream.mapPartitions { orderInfoItr =>
+      val orderInfoList: List[OrderInfo] = orderInfoItr.toList
+      if (orderInfoList.size > 0) {
+        //针对分区中的订单中的所有客户 进行批量查询
+        val userIds: String = orderInfoList.map("'" + _.user_id + "'").mkString(",")
+        val userStateList: List[util.Map[String, Any]] = PhoenixUtil.queryList("select user_id,if_ordered from GMALL0919_USER_STATE where user_id in (" + userIds + ")")
+        // [{userId:123, if_ordered:1 },{userId:2334, if_ordered:1 },{userId:4355, if_ordered:1 }]
+        // 进行转换 把List[Map] 变成Map
+        val userIfOrderedMap: Map[String, String] = userStateList.map(userStateDBMap => (userStateDBMap.get("USER_ID").asInstanceOf[String], userStateDBMap.get("IF_ORDERED").asInstanceOf[String])).toMap
 
-    orderInfoDstream.foreachRDD{rdd=>
-      rdd.saveToPhoenix("GMALL0919_ORDER_INFO",Seq("ID","PROVINCE_ID", "CONSIGNEE", "ORDER_COMMENT", "CONSIGNEE_TEL", "ORDER_STATUS", "PAYMENT_WAY", "USER_ID","IMG_URL", "TOTAL_AMOUNT", "EXPIRE_TIME", "DELIVERY_ADDRESS", "CREATE_TIME","OPERATE_TIME","TRACKING_NO","PARENT_ORDER_ID","OUT_TRADE_NO", "TRADE_BODY", "CREATE_DATE", "CREATE_HOUR"),
+        //进行判断 ，打首单表情
+        for (orderInfo <- orderInfoList) {
+          val ifOrderedUser: String = userIfOrderedMap.getOrElse(orderInfo.user_id, "0")
+          //是下单用户不是首单   否->首单
+          if (ifOrderedUser == "1") {
+            orderInfo.if_first_order = "0"
+          } else {
+            orderInfo.if_first_order = "1"
+          }
+        }
+        orderInfoList.toIterator
+      } else {
+        orderInfoItr
+      }
+
+    }
+    // 以userId 进行分组
+    val groupByUserDstream: DStream[(String, Iterable[OrderInfo])] = orderWithIfFirstDstream.map(orderInfo=>(orderInfo.user_id,orderInfo)).groupByKey()
+
+    val orderInfoFinalDstream: DStream[OrderInfo] = groupByUserDstream.flatMap { case (userId, orderInfoItr) =>
+      val orderList: List[OrderInfo] = orderInfoItr.toList
+      //
+      if (orderList.size > 1) { //   如果在这个批次中这个用户有多笔订单
+        val sortedOrderList: List[OrderInfo] = orderList.sortWith((orderInfo1, orderInfo2) => orderInfo1.create_time < orderInfo2.create_time)
+        if (sortedOrderList(0).if_first_order == "1") { //排序后，如果第一笔订单是首单，那么其他的订单都取消首单标志
+          for (i <- 1 to sortedOrderList.size - 1) {
+            sortedOrderList(i).if_first_order = "0"
+          }
+
+        }
+        sortedOrderList
+      } else {
+        orderList
+      }
+    }
+
+    orderInfoFinalDstream.cache()
+
+    orderInfoFinalDstream.foreachRDD{rdd=>
+      rdd.saveToPhoenix("GMALL0919_ORDER_INFO",Seq("ID","PROVINCE_ID", "CONSIGNEE", "ORDER_COMMENT", "CONSIGNEE_TEL", "ORDER_STATUS", "PAYMENT_WAY", "USER_ID","IMG_URL", "TOTAL_AMOUNT", "EXPIRE_TIME", "DELIVERY_ADDRESS", "CREATE_TIME","OPERATE_TIME","TRACKING_NO","PARENT_ORDER_ID","OUT_TRADE_NO", "TRADE_BODY", "CREATE_DATE", "CREATE_HOUR","IF_FIRST_ORDER"),
         new Configuration(),Some("hadoop1,hadoop2,hadoop3:2181"))
 
     }
+    //同步到userState表中  只有标记了 是首单的用户 才需要同步到用户状态表中
+    val userStateDstream: DStream[UserState] = orderInfoFinalDstream.filter(_.if_first_order=="1").map(orderInfo=>UserState(orderInfo.id,orderInfo.if_first_order))
+    userStateDstream.foreachRDD{rdd=>
+      rdd.saveToPhoenix("GMALL0919_USER_STATE",Seq("USER_ID","IF_ORDERED"),new Configuration(),Some("hadoop1,hadoop2,hadoop3:2181"))
+    }
+
     ssc.start()
     ssc.awaitTermination()
 

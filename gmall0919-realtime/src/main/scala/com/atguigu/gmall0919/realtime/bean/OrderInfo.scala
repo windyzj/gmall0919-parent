@@ -20,7 +20,8 @@ case class OrderInfo(
                       out_trade_no: String,
                       trade_body: String,
                       var create_date: String,
-                      var create_hour: String
+                      var create_hour: String,
+                      var if_first_order:String
 
                     )
 
