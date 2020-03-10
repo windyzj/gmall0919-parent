@@ -56,14 +56,15 @@ object OrderApp {
       if (orderInfoList.size > 0) {
         //针对分区中的订单中的所有客户 进行批量查询
         val userIds: String = orderInfoList.map("'" + _.user_id + "'").mkString(",")
+
         val userStateList: List[util.Map[String, Any]] = PhoenixUtil.queryList("select user_id,if_ordered from GMALL0919_USER_STATE where user_id in (" + userIds + ")")
-        // [{userId:123, if_ordered:1 },{userId:2334, if_ordered:1 },{userId:4355, if_ordered:1 }]
+        // [{USERID:123, IF_ORDERED:1 },{USERID:2334, IF_ORDERED:1 },{USERID:4355, IF_ORDERED:1 }]
         // 进行转换 把List[Map] 变成Map
         val userIfOrderedMap: Map[String, String] = userStateList.map(userStateDBMap => (userStateDBMap.get("USER_ID").asInstanceOf[String], userStateDBMap.get("IF_ORDERED").asInstanceOf[String])).toMap
-
+         //{123:1,2334:1,4355:1}
         //进行判断 ，打首单表情
         for (orderInfo <- orderInfoList) {
-          val ifOrderedUser: String = userIfOrderedMap.getOrElse(orderInfo.user_id, "0")
+          val ifOrderedUser: String = userIfOrderedMap.getOrElse(orderInfo.user_id, "0")  //
           //是下单用户不是首单   否->首单
           if (ifOrderedUser == "1") {
             orderInfo.if_first_order = "0"
