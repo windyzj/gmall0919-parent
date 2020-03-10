@@ -57,17 +57,19 @@ object MyEsUtil {
 
   // batch  bulk
   def bulkInsert(list:List[(String,AnyRef)],indexName:String): Unit ={
-    val jest: JestClient = getClient
-    val bulkBuilder = new Bulk.Builder
-    bulkBuilder.defaultIndex(indexName).defaultType("_doc")
-    for ((id,value) <- list ) {
-      val index: Index = new Index.Builder(value).id(id).build()
-      bulkBuilder.addAction(index)
+    if(list.size>0){
+      val jest: JestClient = getClient
+      val bulkBuilder = new Bulk.Builder
+      bulkBuilder.defaultIndex(indexName).defaultType("_doc")
+      for ((id,value) <- list ) {
+        val index: Index = new Index.Builder(value).id(id).build()
+        bulkBuilder.addAction(index)
+      }
+      val bulk: Bulk = bulkBuilder.build()
+      val result: BulkResult = jest.execute(bulk)
+      println("保存了"+result.getItems.size()+"条数据")
+      close(jest)
     }
-    val bulk: Bulk = bulkBuilder.build()
-    val result: BulkResult = jest.execute(bulk)
-    println("保存了"+result.getItems.size()+"条数据")
-    close(jest)
   }
 
 
