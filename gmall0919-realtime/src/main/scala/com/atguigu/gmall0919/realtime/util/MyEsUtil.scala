@@ -18,6 +18,7 @@ object MyEsUtil {
   def getClient: JestClient = {
     if (factory == null) build()
     factory.getObject
+
   }
 
   /**
@@ -51,14 +52,14 @@ object MyEsUtil {
     close(jest)*/
     //批量提交保存
     bulkInsert(List(("777",Customer("1214","qiuchuji"))
-                   ,("888",Customer("1215","huangyaoshi"))))
+                   ,("888",Customer("1215","huangyaoshi"))),"customer0919")
   }
 
   // batch  bulk
-  def bulkInsert(list:List[(String,AnyRef)]): Unit ={
+  def bulkInsert(list:List[(String,AnyRef)],indexName:String): Unit ={
     val jest: JestClient = getClient
     val bulkBuilder = new Bulk.Builder
-    bulkBuilder.defaultIndex("customer0919").defaultType("customer")
+    bulkBuilder.defaultIndex(indexName).defaultType("_doc")
     for ((id,value) <- list ) {
       val index: Index = new Index.Builder(value).id(id).build()
       bulkBuilder.addAction(index)
