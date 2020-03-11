@@ -1,12 +1,14 @@
 package com.atguigu.gmall0919.realtime.app
 
+import java.text.SimpleDateFormat
 import java.util
+import java.util.Date
 
 import com.alibaba.fastjson.JSON
 import com.alibaba.fastjson.serializer.SerializeConfig
 import com.atguigu.gmall0919.common.constant.GmallConstant
-import com.atguigu.gmall0919.realtime.bean.{OrderDetail, OrderInfo, SaleDetail}
-import com.atguigu.gmall0919.realtime.util.{MyKafkaUtil, RedisUtil}
+import com.atguigu.gmall0919.realtime.bean.{OrderDetail, OrderInfo, SaleDetail, UserInfo}
+import com.atguigu.gmall0919.realtime.util.{MyEsUtil, MyKafkaUtil, RedisUtil}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
@@ -85,7 +87,7 @@ object SaleApp {
         // 2.1把自己写入redis
         // type ?    set      key ?  order_detail:[order_id]    value? order_detail_jsons .....
         val orderDetailKey = "order_detail:" + orderDetail.order_id
-        val orderDetailJson: String = JSON.toJSONString(orderDetail)
+        val orderDetailJson: String = JSON.toJSONString(orderDetail, new SerializeConfig(true))
         jedis.sadd(orderDetailKey, orderDetailJson)
         jedis.expire(orderDetailKey, 3600)
         // 2.2 查询redis中的主表信息
@@ -98,14 +100,64 @@ object SaleApp {
         }
 
       }
-
-
       saleDetailList
     }
-    saleDstream
+    //反查redis获得用户信息
+    val saleDetailWithUserDstream: DStream[SaleDetail] = saleDstream.mapPartitions { saleDetailWithOutUserItr =>
+      val jedis: Jedis = RedisUtil.getJedisClient
+      val saleDetailWithUserList = new ListBuffer[SaleDetail]
+      for (saleDetail: SaleDetail <- saleDetailWithOutUserItr) {
+        val userkey = "user_info:" + saleDetail.user_id
+        val userJson: String = jedis.get(userkey)
+        val userInfo: UserInfo = JSON.parseObject(userJson, classOf[UserInfo])
+        saleDetail.mergeUserInfo(userInfo)
+        saleDetailWithUserList += saleDetail
+      }
+      jedis.close()
+      saleDetailWithUserList.toIterator
+    }
 
 
-    orderJoinedDstream.print(100)
+
+
+    //saleDetailWithUserDstream.print(100)
+
+    saleDetailWithUserDstream.foreachRDD{rdd=>
+      rdd.foreachPartition{saledetailItr=>
+        //id决定了 幂等性
+        val saleDetailList: List[(String, SaleDetail)] = saledetailItr.toList.map(saleDetail=> (saleDetail.order_detail_id,saleDetail))
+        val date: String = new SimpleDateFormat("yyyyMMdd").format(new Date)
+        MyEsUtil.bulkInsert(saleDetailList,GmallConstant.ES_INDEX_SALE+"_"+date)
+      }
+    }
+
+
+
+    val inputUserDstream: InputDStream[ConsumerRecord[String, String]] = MyKafkaUtil.getKafkaStream(GmallConstant.KAFKA_TOPIC_USER,ssc)
+    val userInfoDstream: DStream[UserInfo] = inputUserDstream.map { record =>
+      val jsonString: String = record.value()
+      val userInfo: UserInfo = JSON.parseObject(jsonString, classOf[UserInfo])
+      userInfo
+    }
+    userInfoDstream.foreachRDD{rdd=>
+          rdd.foreachPartition{userInfoItr=>
+             val jedis: Jedis = RedisUtil.getJedisClient
+            //用于被 订单流查询关联
+            //userInfo->redis      type?  string  key? user_info:[user_id]   value ? user_json
+            for (userInfo <- userInfoItr ) {
+              val userKey="user_info:"+userInfo.id
+              val userJson: String = JSON.toJSONString(userInfo,new SerializeConfig(true))
+                jedis.set(userKey,userJson) //新增修改同样处理
+            }
+            jedis.close()
+
+          }
+    }
+
+
+
+
+    //orderJoinedDstream.print(100)
 
     ssc.start()
     ssc.awaitTermination()

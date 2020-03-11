@@ -42,7 +42,7 @@ public class CanalHandler {
                 jsonObject.put(column.getName(),column.getValue());
             }
             try {
-                Thread.sleep(1500);
+                Thread.sleep(500);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
