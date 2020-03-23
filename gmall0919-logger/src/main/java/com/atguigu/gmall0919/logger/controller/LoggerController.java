@@ -21,7 +21,8 @@ public class LoggerController {
     public String dolog(@RequestParam("logString") String logString ){
         System.out.println(logString);
 
-        //1 加时间戳
+        //1 加时间戳 
+        //123123123
         JSONObject jsonObject = JSON.parseObject(logString);
         jsonObject.put("ts",System.currentTimeMillis());
         String jsonString = jsonObject.toJSONString();
