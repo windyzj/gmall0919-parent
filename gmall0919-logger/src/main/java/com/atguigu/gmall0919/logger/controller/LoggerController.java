@@ -22,6 +22,7 @@ public class LoggerController {
         System.out.println(logString);
 
         //1 加时间戳
+        //456456456
         JSONObject jsonObject = JSON.parseObject(logString);
         jsonObject.put("ts",System.currentTimeMillis());
         String jsonString = jsonObject.toJSONString();
